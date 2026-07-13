@@ -1,0 +1,53 @@
+{
+  "version": 2,
+  "sources": [
+    {
+      "id": "host1",
+      "name": "HOST1",
+      "ip": "1.2.3.4",
+      "location": "香港",
+      "url": "https://sui.host1.example.com/sub/REPLACE_WITH_YOUR_TOKEN",
+      "enabled": true,
+      "status": "unknown",
+      "last_fetch": null,
+      "last_change": null,
+      "content_hash": "",
+      "node_count": 0,
+      "error": null,
+      "ip_quality": null
+    },
+    {
+      "id": "host2",
+      "name": "HOST2",
+      "ip": "5.6.7.8",
+      "location": "洛杉矶",
+      "url": "https://sui.host2.example.com/sub/REPLACE_WITH_YOUR_TOKEN",
+      "enabled": true,
+      "status": "unknown",
+      "last_fetch": null,
+      "last_change": null,
+      "content_hash": "",
+      "node_count": 0,
+      "error": null,
+      "ip_quality": null
+    }
+  ],
+  "combos": [
+    {
+      "slug": "mix",
+      "remark": "主力全量",
+      "sources": ["host1", "host2"],
+      "node_count": 0,
+      "updated_at": null,
+      "content_hash": ""
+    },
+    {
+      "slug": "mix1",
+      "remark": "",
+      "sources": ["host1"],
+      "node_count": 0,
+      "updated_at": null,
+      "content_hash": ""
+    }
+  ]
+}

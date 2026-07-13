@@ -1,0 +1,25 @@
+# 临时 / 本地产物
+_check.js
+_probe.py
+*.pyc
+__pycache__/
+.nginx_conf.tmp
+merge.log
+
+# 本地基线快照（含旧版源码，不入库）
+baseline/
+
+# 真实订阅配置（含订阅 URL/Token，切勿入库！用 deploy/sub_configs.json.example）
+sub_configs.json
+
+# 含凭据的本地环境文件
+deploy/.env
+tools/.env
+
+# 运行时生成的订阅文件
+*.txt
+*.yaml
+*.json
+!sub_configs.json.example
+!deploy/sub_configs.json.example
+cache/
