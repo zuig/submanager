@@ -660,6 +660,10 @@ def write_nginx_config():
     L.append('        proxy_set_header X-Real-IP $remote_addr;')
     L.append('        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;')
     L.append('        proxy_set_header X-Forwarded-Proto $scheme;')
+    # 禁止缓存管理面板 HTML（避免部署后浏览器仍显示旧 JS）
+    L.append('        add_header Cache-Control "no-store, no-cache, must-revalidate" always;')
+    L.append('        add_header Pragma "no-cache" always;')
+    L.append('        expires -1;')
     L.append('    }')
     L.append('}')
     tmp = '/opt/sub-converter/.nginx_conf.tmp'

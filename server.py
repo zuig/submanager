@@ -323,11 +323,13 @@ async function previewEp(url,label){
         html+='<div class="node-item"><span class="node-name">'+esc(name)+'</span><br><span class="node-uri">'+esc(line)+'</span></div>';
       }
       html+='</pre>';
-    }else if(label==='Clash'||text.includes('proxies:')||text.includes('{')){
-      nodeCount=(text.match(/name:/g)||[]).length;
+    }else if(label==='Clash'||text.includes('proxies:')){
+      // 只统计 proxies 列表项（行首 - name:），避免把 inbound/selector 的 name 也算进去
+      const lines=text.split('\n');
+      nodeCount=lines.filter(l=>l.trim().startsWith('- name:')).length;
       html='<pre>'+esc(text)+'</pre>';
-    }else{
-      try{const j=JSON.parse(text);nodeCount=(j.outbounds||[]).length;}catch(e){}
+    }else if(label==='Sing-box'){
+      try{const j=JSON.parse(text);nodeCount=(j.outbounds||[]).filter(o=>['hysteria2','vless','tuic','anytls','trojan','vmess','shadowsocks'].includes(o?.type)).length;}catch(e){}
       html='<pre style="white-space:pre-wrap">'+esc(text)+'</pre>';
     }
     modal.querySelector('.preview-body').innerHTML=html;

@@ -7,7 +7,7 @@ Type=simple
 WorkingDirectory=/opt/sub-converter
 ExecStart=/usr/bin/python3 /opt/sub-converter/server.py
 # 部署相关配置从 .env 读取（域名/证书路径/管理密码），不写死在单元文件里
-EnvironmentFile=/opt/sub-converter/.env
+EnvironmentFile=-/opt/sub-converter/.env
 Restart=always
 RestartSec=5
 User=root
