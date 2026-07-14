@@ -324,9 +324,16 @@ async function previewEp(url,label){
       }
       html+='</pre>';
     }else if(label==='Clash'||text.includes('proxies:')){
-      // 只统计 proxies 列表项（行首 - name:），避免把 inbound/selector 的 name 也算进去
+      // 只统计 proxies 段内的 - name:（排除 proxy-groups 段的组名）
       const lines=text.split('\n');
-      nodeCount=lines.filter(l=>l.trim().startsWith('- name:')).length;
+      let inProxies=false;
+      nodeCount=0;
+      for(const l of lines){
+        const t=l.trim();
+        if(t==='proxies:'){inProxies=true;continue;}
+        if(t.match(/^(proxy-groups|rules|dns):/)) break; // 离开 proxies 段
+        if(inProxies && t.startsWith('- name:')) nodeCount++;
+      }
       html='<pre>'+esc(text)+'</pre>';
     }else if(label==='Sing-box'){
       try{const j=JSON.parse(text);nodeCount=(j.outbounds||[]).filter(o=>['hysteria2','vless','tuic','anytls','trojan','vmess','shadowsocks'].includes(o?.type)).length;}catch(e){}
