@@ -5,7 +5,7 @@ ZSUB 订阅管理面板 v2 —— 源池 + 多组合
 监听 127.0.0.1:8088, Nginx 反代 /admin/
 依赖: 同目录上级的 convert.py (from convert import ...)
 """
-import sys, os, json, hashlib, time, urllib.parse, subprocess, socket, threading, urllib.request
+import sys, os, json, hashlib, time, urllib.parse, subprocess, socket, threading, urllib.request, concurrent.futures, random, struct
 sys.path.insert(0, '/opt/sub-converter')
 import convert
 
@@ -61,6 +61,18 @@ def state_payload():
     return {
         'sources': cfg['sources'],
         'combos': cfg['combos'],
+        'scamalytics': {
+            'configured': bool(SCAMALYTICS_USER and SCAMALYTICS_API_KEY),
+            'month': current_month(),
+            'used': scamalytics_month_used(),
+            'quota': SCAMALYTICS_QUOTA,
+        },
+        'ip2location': {
+            'configured': bool(IP2LOCATION_KEY),
+            'month': current_month(),
+            'used': ip2location_month_used(),
+            'quota': IP2LOCATION_QUOTA,
+        },
         'stats': {
             'sources': len(cfg['sources']),
             'combos': len(cfg['combos']),
@@ -83,6 +95,10 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Pi
 .topbar{display:flex;align-items:center;gap:12px;padding:14px 22px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:20}
 .topbar h1{font-size:17px;margin:0;font-weight:700}
 .topbar .sp{flex:1}
+.quota-chip{font-size:12px;color:var(--mut);background:#f0f2f5;border:1px solid var(--line);border-radius:20px;padding:5px 12px;white-space:nowrap}
+.quota-chip b{color:var(--txt)}
+.quota-chip.warn{background:#fff3e0;border-color:#f3dca6;color:var(--amber)}
+.quota-chip.off{background:#eef0f2;color:var(--mut)}
 .btn{border:1px solid var(--line);background:#fff;border-radius:8px;padding:7px 14px;cursor:pointer;font-size:13px;color:var(--txt)}
 .btn:hover{background:#f0f2f5}
 .btn.primary{background:var(--blue);border-color:var(--blue);color:#fff}
@@ -127,7 +143,7 @@ tr:last-child td{border-bottom:none}
 .mask{position:fixed;inset:0;background:rgba(20,24,30,.45);display:none;align-items:center;justify-content:center;z-index:50}
 .mask.show{display:flex}
 .modal{background:#fff;border-radius:14px;padding:20px 22px;width:440px;max-width:92vw;max-height:88vh;overflow:auto}
-.modal h3{margin:0 0 14px;font-size:16px}
+.modal h3{margin:0 0 6px;font-size:16px}
 .field{margin-bottom:13px}
 .field label{display:block;font-size:12px;color:var(--mut);margin-bottom:5px}
 .field input,.field textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:14px;font-family:inherit}
@@ -183,14 +199,28 @@ tr[draggable]{transition:background .15s}
 tr.dragging{opacity:.45;background:#eef3fc}
 tr.drag-over{border-top:2px solid var(--blue)}
 .ipq-loading{color:var(--mut);padding:14px 0}
-.ipq-hero{display:flex;gap:12px;margin:6px 0 10px}
-.ipq-badge{flex:1;border-radius:10px;padding:12px 14px;background:#f4f6f8;border:1px solid var(--line);text-align:center}
-.ipq-badge .lbl{display:block;font-size:12px;color:var(--mut);margin-bottom:4px}
-.ipq-badge b{font-size:18px}
-.ipq-badge.ok{background:#e8f6ee;border-color:#bfe3cd}
-.ipq-badge.warn{background:#fff6e6;border-color:#f3dca6}
-.ipq-badge.bad{background:#fdecea;border-color:#f3c6c2}
-.tag-dc b{color:#2b6cb0}.tag-res b{color:#2f855a}.tag-mob b{color:#805ad5}.tag-proxy b{color:#c05621}
+.ipq-hero{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:6px 0 10px}
+.ipq-card{background:#fff;border-radius:11px;padding:13px 14px;border:1px solid var(--line);border-top:2px solid var(--mut)}
+.ipq-card>.lbl{display:block;font-size:11px;font-weight:500;letter-spacing:.03em;margin-bottom:10px}
+.ipq-card.c-fraud{border-top-color:#534AB7}.ipq-card.c-fraud>.lbl{color:#534AB7}
+.ipq-card.c-asn{border-top-color:#185FA5}.ipq-card.c-asn>.lbl{color:#185FA5}
+.ipq-card.c-type{border-top-color:#A32D2D}.ipq-card.c-type>.lbl{color:#A32D2D}
+.ipq-card.c-rep{border-top-color:#BA7517}.ipq-card.c-rep>.lbl{color:#BA7517}
+.ipq-src{display:flex;align-items:center;justify-content:space-between;padding:6px 0}
+.ipq-src+.ipq-src{border-top:.5px solid var(--line)}
+.ipq-srcname{font-size:12px;color:var(--mut)}
+.ipq-srcval{display:flex;align-items:center;gap:6px}
+.ipq-val{font-size:14px;font-weight:600;color:var(--txt)}
+.ipq-err{font-size:12px;color:#c05621}
+.ipq-pill{font-size:10px;padding:1px 7px;border-radius:10px;font-weight:500;white-space:nowrap}
+.ipq-pill.ok{background:#e8f6ee;color:#2f855a}
+.ipq-pill.warn{background:#fff6e6;color:#b7791f}
+.ipq-pill.bad{background:#fdecea;color:#c05621;border:.5px solid #f3c6c2}
+.ipq-asn{font-size:15px;font-weight:600;color:#0c447c;line-height:1.2;display:block}
+.ipq-asn-sub{font-size:12px;color:var(--mut);line-height:1.4;margin-top:4px}
+.ipq-asn-usage{font-size:11px;color:var(--mut)}
+.ipq-line{display:flex;align-items:center}
+.ipq-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-right:8px}
 .ipq-meta{font-size:12px;color:var(--txt);margin-bottom:10px}
 .ipq-meta .mut{color:var(--mut)}
 .ipq-detail-toggle{margin-bottom:8px}
@@ -201,6 +231,10 @@ table.kv td:first-child{color:var(--mut);width:90px;white-space:nowrap}
 .ipq-bl-title{font-size:13px;font-weight:600;margin:10px 0 4px}
 ul.ipq-bl{margin:0;padding-left:18px;font-size:13px}
 ul.ipq-bl li{margin:2px 0}
+.ipq-subtitle{display:flex;gap:8px;flex-wrap:nowrap;margin-bottom:4px;padding:0}
+.ipq-sub-chip{font-size:12px;color:var(--mut);background:#fff;border:1px solid var(--line);border-radius:14px;padding:4px 10px;white-space:nowrap}
+.ipq-sub-chip b{color:var(--txt)}
+.ipq-sub-chip.warn{background:#fff3e0;border-color:#f3dca6;color:var(--amber)}
 </style>
 </head>
 <body>
@@ -242,12 +276,22 @@ function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('show'
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 function fmtTime(t){if(!t)return '\u2014';return t.replace('T',' ');}
 
-async function api(path,body){
-  const opt={method:body?'POST':'GET',headers:{}};
+async function api(path,body,timeoutMs=20000){
+  const ac=new AbortController(),timer=setTimeout(()=>ac.abort(),timeoutMs);
+  const opt={method:body?'POST':'GET',headers:{},signal:ac.signal};
   if(body){opt.headers['Content-Type']='application/json';opt.body=JSON.stringify(body);}
-  const r=await fetch('/admin/api/'+path,opt);
-  if(r.status===401){location.reload();throw new Error('unauth');}
-  return r.json();
+  try{
+    const r=await fetch('/admin/api/'+path,opt);
+    clearTimeout(timer);
+    if(r.status===401){location.reload();throw new Error('unauth');}
+    const txt=await r.text();
+    try{return JSON.parse(txt);}
+    catch{throw new Error('服务器返回了非 JSON 数据('+r.status+')：'+txt.slice(0,120));}
+  }catch(e){
+    clearTimeout(timer);
+    if(e.name==='AbortError')throw new Error('请求超时('+timeoutMs/1000+'秒)，服务器未响应');
+    throw e;
+  }
 }
 
 function statusTag(s){
@@ -404,7 +448,7 @@ async function srcIpQ(id){
   if(!ip){openModal('<h3>IP 质量</h3><div class="warn">该源没有 IP，请先在「编辑」里补充 IP 后再检测。</div><div class="acts"><button class="btn primary" onclick="closeModal()">知道了</button></div>');return;}
   openModal('<h3>IP 质量 · '+esc(s.name)+'</h3><div id="ipqBody" class="ipq-loading">检测中…</div>');
   try{
-    const r=await api('ip-quality',{ip,force:false});
+    const r=await api('ip-quality',{ip,force:false},40000);
     renderIpq(r, ip);
   }catch(e){ const b=document.getElementById('ipqBody'); if(b)b.innerHTML='<div class="warn">检测失败：'+esc(e.message)+'</div>'; }
 }
@@ -412,15 +456,69 @@ function renderIpq(r, ip){
   const b=document.getElementById('ipqBody'); if(!b)return;
   if(!r.ok){ b.innerHTML='<div class="warn">'+esc(r.error||'检测失败')+'</div>'; return; }
   const type=r.ip_type||'—', rep=r.reputation||'—';
-  const repClass = rep==='干净'?'ok':(rep==='可疑'?'warn':(rep==='滥用'?'bad':''));
-  const typeClass = type.indexOf('机房')>=0?'tag-dc':(type.indexOf('住宅')>=0?'tag-res':(type.indexOf('移动')>=0?'tag-mob':'tag-proxy'));
   const total=(r.dnsbl&&r.dnsbl.total)||0;
   let html='';
+  // 额度副标题
+  let subHtml='';
+  const sa=STATE.scamalytics;
+  if(sa && sa.configured){
+    const sp=sa.quota?Math.min(100,Math.round(sa.used/sa.quota*100)):0;
+    subHtml+='<span class="ipq-sub-chip'+(sp>=90?' warn':'')+'">Scamalytics 额度 本月 <b>'+sa.used+'</b>/'+sa.quota+'</span>';
+  }
+  const ip2s=STATE.ip2location;
+  if(ip2s && ip2s.configured){
+    const p2=ip2s.quota?Math.min(100,Math.round(ip2s.used/ip2s.quota*100)):0;
+    subHtml+='<span class="ipq-sub-chip'+(p2>=90?' warn':'')+'">IP2Location 额度 本月 <b>'+ip2s.used+'</b>/'+ip2s.quota+'</span>';
+  }
+  if(subHtml) html+='<div class="ipq-subtitle">'+subHtml+'</div>';
   html+='<div class="ipq-hero">';
-  html+='<div class="ipq-badge '+typeClass+'"><span class="lbl">IP 类型</span><b>'+esc(type)+'</b></div>';
-  html+='<div class="ipq-badge '+repClass+'"><span class="lbl">声誉评级</span><b>'+esc(rep)+'</b></div>';
+  // ① 欺诈评分（双源：Scamalytics score/risk + IP2Location fraud_score/is_proxy）
+  let fraudHtml='';
+  if(r.scamalytics && r.scamalytics.configured){
+    const sc=r.scamalytics;
+    if(sc.ok){
+      const rk=sc.risk||'';
+      const rkCls = rk==='high'?'bad':(rk==='medium'?'warn':'ok');
+      fraudHtml+='<div class="ipq-src"><span class="ipq-srcname">Scamalytics</span><span class="ipq-srcval"><b class="ipq-val">'+esc(String(sc.score))+'</b><span class="ipq-pill '+rkCls+'">'+esc(rk)+'</span></span></div>';
+    }else{
+      fraudHtml+='<div class="ipq-src"><span class="ipq-srcname">Scamalytics</span><span class="ipq-err">获取失败</span></div>';
+    }
+  }
+  if(r.ip2location && r.ip2location.configured){
+    const ip2=r.ip2location;
+    if(ip2.ok){
+      const fs=Number(ip2.fraud_score||0);
+      const fsCls = fs>=70?'bad':(fs>=31?'warn':'ok');
+      const px = ip2.is_proxy?'<span class="ipq-pill bad">proxy</span>':'<span class="ipq-pill ok">非代理</span>';
+      fraudHtml+='<div class="ipq-src"><span class="ipq-srcname">IP2Location</span><span class="ipq-srcval"><b class="ipq-val">'+esc(String(ip2.fraud_score))+'</b>'+px+'</span></div>';
+    }else{
+      fraudHtml+='<div class="ipq-src"><span class="ipq-srcname">IP2Location</span><span class="ipq-err">获取失败</span></div>';
+    }
+  }
+  if(fraudHtml){
+    html+='<div class="ipq-card c-fraud"><span class="lbl">欺诈评分</span>'+fraudHtml+'</div>';
+  }else{
+    html+='<div class="ipq-card c-fraud"><span class="lbl">欺诈评分</span><div class="ipq-err">未配置数据源</div></div>';
+  }
+  // ② ASN / 运营商（优先 IP2Location，回退 GeoIP）
+  if(r.ip2location && r.ip2location.configured && r.ip2location.ok){
+    const ip2=r.ip2location;
+    html+='<div class="ipq-card c-asn"><span class="lbl">ASN / 运营商</span><b class="ipq-asn">AS'+esc(String(ip2.asn||'-'))+'</b><div class="ipq-asn-sub">'+esc(ip2.as||'-')+'<br><span class="ipq-asn-usage">'+esc(ip2.as_usage_type||'-')+'</span></div></div>';
+  }else{
+    const g=r.geo||{};
+    const asNum=g.as||'';
+    const asn=(asNum)+(g.asname?' '+g.asname:'');
+    html+='<div class="ipq-card c-asn"><span class="lbl">ASN / 运营商</span><b class="ipq-asn">'+(asNum?'AS'+esc(asNum):'—')+'</b><div class="ipq-asn-sub">'+(asn||'-')+'</div></div>';
+  }
+  // ③ IP 类型
+  const typeDot = type.indexOf('机房')>=0?'#BA7517':(type.indexOf('住宅')>=0?'#2f855a':(type.indexOf('移动')>=0?'#805ad5':'#c05621'));
+  html+='<div class="ipq-card c-type"><span class="lbl">IP 类型</span><div class="ipq-line"><span class="ipq-dot" style="background:'+typeDot+'"></span><b class="ipq-val">'+esc(type)+'</b></div></div>';
+  // ④ 声誉评级（卡内不重复展示黑名单数，由下方信息条统一呈现）
+  const repDot = rep==='干净'?'#2f855a':(rep==='可疑'?'#BA7517':'#c05621');
+  html+='<div class="ipq-card c-rep"><span class="lbl">声誉评级</span><div class="ipq-line"><span class="ipq-dot" style="background:'+repDot+'"></span><b class="ipq-val">'+esc(rep)+'</b></div></div>';
   html+='</div>';
-  html+='<div class="ipq-meta">IP <b>'+esc(ip)+'</b> · 黑名单命中 <b>'+(r.blacklist_hits||0)+'/'+total+'</b>'+(r.cached?' · <span class="mut">缓存('+(r.count||0)+'次)</span>':' · <span class="mut">刚检测</span>')+'</div>';
+  let meta = 'IP <b>'+esc(ip)+'</b> · 黑名单命中 <b>'+(r.blacklist_hits||0)+'/'+total+'</b>'+(r.cached?' · <span class="mut">缓存('+(r.count||0)+'次)</span>':' · <span class="mut">刚检测</span>');
+  html+='<div class="ipq-meta">'+meta+'</div>';
   html+='<div class="ipq-detail-toggle"><button class="btn sm" onclick="toggleIpqDetail()">详细 ▾</button></div>';
   html+='<div id="ipqDetail" class="ipq-detail" style="display:none">';
   const g=r.geo||{};
@@ -436,6 +534,30 @@ function renderIpq(r, ip){
     html+='<div class="ipq-bl-title">黑名单命中清单</div><ul class="ipq-bl">';
     for(const it of r.dnsbl.lists){ html+='<li>'+esc(it.name)+' <span class="mut">'+esc(it.code||'')+'</span></li>'; }
     html+='</ul>';
+  }
+  if(r.scamalytics && r.scamalytics.configured){
+    const sc=r.scamalytics;
+    const pr=sc.proxy||{};
+    const flags=[pr.is_datacenter?'数据中心':'',pr.is_vpn?'VPN':'',pr.is_apple_icloud_private_relay?'iCloud中继':'',pr.is_amazon_aws?'AWS':'',pr.is_google?'Google':''].filter(Boolean);
+    html+='<div class="ipq-bl-title">Scamalytics 详情</div>';
+    html+='<table class="kv">';
+    html+='<tr><td>API 使用量</td><td>'+esc(String(STATE.scamalytics.used))+' / '+esc(String(STATE.scamalytics.quota))+'</td></tr>';
+    html+='<tr><td>API 总量</td><td>'+esc(String(STATE.scamalytics.quota))+'</td></tr>';
+    if(sc.ok){
+      html+='<tr><td>外部黑名单</td><td>'+(sc.blacklisted?'是':'否')+'</td></tr>';
+      html+='<tr><td>标记</td><td>'+(flags.join(' / ')||'—')+'</td></tr>';
+    }else{
+      html+='<tr><td>标记</td><td>'+esc(sc.error||'获取失败')+'</td></tr>';
+    }
+    html+='</table>';
+    if(sc.ok && sc.url) html+='<div style="margin-top:8px"><a class="btn sm" href="'+esc(sc.url)+'" target="_blank" rel="noopener">在 Scamalytics 查看 ↗</a></div>';
+  }
+  if(r.ip2location && r.ip2location.configured){
+    html+='<div class="ipq-bl-title">IP2Location 详情</div>';
+    html+='<table class="kv">';
+    html+='<tr><td>API 总量</td><td>'+esc(String(STATE.ip2location.quota))+'</td></tr>';
+    html+='</table>';
+    html+='<div style="margin-top:8px"><a class="btn sm" href="https://www.ip2location.io/" target="_blank" rel="noopener">打开 ip2location.io ↗</a></div>';
   }
   html+='</div>';
   html+='<div class="acts"><button class="btn primary" onclick="refreshIpq(\''+esc(ip)+'\')">刷新数据</button><button class="btn" onclick="closeModal()">关闭</button></div>';
@@ -742,6 +864,69 @@ IPQ_MAX = 100
 IPQ_LOCK = threading.Lock()
 IPQ_UA = 'ZSUB-Admin/1.0'
 
+# Scamalytics 欺诈评分 API（免费版，每月 5000 额度；user/key 走环境变量，不入库）
+SCAMALYTICS_USER = os.environ.get('SCAMALYTICS_USER', '')
+SCAMALYTICS_API_KEY = os.environ.get('SCAMALYTICS_API_KEY', '')
+SCAMALYTICS_QUOTA = int(os.environ.get('SCAMALYTICS_QUOTA', '5000'))
+# IP2Location.io 地理+代理+欺诈评分 API（免费版，每月 50000 额度；key 走环境变量，不入库）
+IP2LOCATION_KEY = os.environ.get('IP2LOCATION_KEY', '')
+IP2LOCATION_QUOTA = int(os.environ.get('IP2LOCATION_QUOTA', '50000'))
+SCAMALYTICS_STATS_FILE = '/opt/sub-converter/ipq_stats.json'
+STATS_LOCK = threading.Lock()
+
+def stats_load():
+    try:
+        with open(SCAMALYTICS_STATS_FILE, encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def stats_save(d):
+    try:
+        tmp = SCAMALYTICS_STATS_FILE + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump(d, f, ensure_ascii=False)
+        os.replace(tmp, SCAMALYTICS_STATS_FILE)
+    except Exception:
+        pass
+
+def current_month():
+    return time.strftime('%Y-%m', time.localtime())
+
+def scamalytics_month_used():
+    d = stats_load()
+    m = (d.get('scamalytics', {}) or {}).get(current_month(), {})
+    return m.get('used', 0)
+
+def bump_scamalytics_usage():
+    """本系统每真正调用一次 scamalytics API 就 +1（缓存命中不计数）"""
+    month = current_month()
+    with STATS_LOCK:
+        d = stats_load()
+        months = d.setdefault('scamalytics', {})
+        m = months.get(month, {'used': 0})
+        m['used'] = m.get('used', 0) + 1
+        months[month] = m
+        stats_save(d)
+        return m['used']
+
+def ip2location_month_used():
+    d = stats_load()
+    m = (d.get('ip2location', {}) or {}).get(current_month(), {})
+    return m.get('used', 0)
+
+def bump_ip2location_usage():
+    """本系统每真正调用一次 IP2Location API 就 +1（缓存命中不计数）"""
+    month = current_month()
+    with STATS_LOCK:
+        d = stats_load()
+        months = d.setdefault('ip2location', {})
+        m = months.get(month, {'used': 0})
+        m['used'] = m.get('used', 0) + 1
+        months[month] = m
+        stats_save(d)
+        return m['used']
+
 # DNSBL 清单（纯 DNS 查询，免 key）。命中返回 127.0.0.x，未命中抛 NXDOMAIN
 DNSBL_ZONES = [
     ('Spamhaus Zen', 'zen.spamhaus.org'),
@@ -783,29 +968,135 @@ def geoip_query(ip):
         url = 'http://ip-api.com/json/%s?lang=zh-CN&fields=%s' % (ip, fields)
         req = urllib.request.Request(url, headers={'User-Agent': IPQ_UA})
         with urllib.request.urlopen(req, timeout=8) as r:
-            return json.loads(r.read().decode('utf-8', 'replace'))
+            raw = r.read()
+            ct = r.headers.get('Content-Type', '')
+            # ip-api.com 限流时返回 HTML 或纯文本
+            if 'json' not in ct:
+                return {'status': 'fail', 'message': 'API 返回非 JSON(可能限流)'}
+            text = raw.decode('utf-8', 'replace').strip()
+            if not text or text[0] != '{':
+                return {'status': 'fail', 'message': 'API 返回异常内容'}
+            return json.loads(text)
     except Exception as e:
         return {'status': 'fail', 'message': str(e)}
+
+def dnsbl_check_one(rev, name_zone):
+    """查单个 DNSBL zone：用 UDP 直接发 DNS 查询，精确控制超时"""
+    import struct, random
+    name, zone = name_zone
+    qname = ('%s.%s' % (rev, zone)).encode('ascii') + b'\x00'
+    try:
+        # 手动构造 DNS 查询报文，UDP 发到系统 DNS 解析器（/etc/resolv.conf）
+        txn_id = random.randint(0, 65535)
+        # DNS header: id=txn, flags=RD(standard query), questions=1
+        header = struct.pack('>HHHHHH', txn_id, 0x0100, 1, 0, 0, 0)
+        # Question: QNAME + QTYPE(A) + QCLASS(IN)
+        q = b''
+        for label in qname.split(b'\x00')[0].split(b'.'):
+            q += bytes([len(label)]) + label
+        q += b'\x00\x00\x01\x00\x01'
+        payload = header + q
+
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.settimeout(2.0)
+        # 发到系统默认 DNS（读 /etc/resolv.conf）
+        dns_server = '127.0.0.1'  # 本地缓存/转发器
+        try:
+            with open('/etc/resolv.conf') as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith('nameserver'):
+                        dns_server = line.split()[1]
+                        break
+        except Exception:
+            pass
+
+        sock.sendto(payload, (dns_server, 53))
+        data, _ = sock.recvfrom(512)
+        sock.close()
+
+        # 解析响应：检查 RCODE 和回答数
+        if len(data) >= 12:
+            rcode = data[3] & 0x0F
+            ancount = struct.unpack('>H', data[6:8])[0]
+            if rcode == 0 and ancount > 0:
+                # 有回答 → 命中黑名单（返回的 A 记录就是 code）
+                return {'name': name, 'code': 'LISTED'}
+        return {'name': name, 'code': None}
+    except socket.timeout:
+        return {'name': name, 'code': None}
+    except Exception:
+        return {'name': name, 'code': None}
 
 def dnsbl_query(ip):
     if ':' in ip:  # IPv6 多数清单仅支持 v4，跳过
         return {'hits': 0, 'total': len(DNSBL_ZONES), 'lists': [], 'skipped': True}
     rev = '.'.join(reversed(ip.split('.')))
     results = []
-    hits = 0
-    prev_to = socket.getdefaulttimeout()
-    socket.setdefaulttimeout(4)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(DNSBL_ZONES)) as pool:
+        futs = {pool.submit(dnsbl_check_one, rev, nz): nz for nz in DNSBL_ZONES}
+        for fut in concurrent.futures.as_completed(futs, timeout=10):
+            results.append(fut.result())
+    hits = sum(1 for r in results if r.get('code'))
+    return {'hits': hits, 'total': len(DNSBL_ZONES), 'lists': [r for r in results if r.get('code')]}
+
+def scamalytics_query(ip):
+    """Scamalytics 欺诈评分（官方免费 API，需 user+key，走环境变量）"""
+    user = SCAMALYTICS_USER
+    key = SCAMALYTICS_API_KEY
+    if not user or not key:
+        return {'configured': False}
+    url = 'https://api11.scamalytics.com/v3/%s/?key=%s&ip=%s' % (user, key, ip)
+    req = urllib.request.Request(url, headers={'User-Agent': IPQ_UA})
     try:
-        for name, zone in DNSBL_ZONES:
-            try:
-                ans = socket.gethostbyname('%s.%s' % (rev, zone))
-                hits += 1
-                results.append({'name': name, 'code': ans})
-            except Exception:
-                results.append({'name': name, 'code': None})
-    finally:
-        socket.setdefaulttimeout(prev_to)
-    return {'hits': hits, 'total': len(DNSBL_ZONES), 'lists': [x for x in results if x.get('code')]}
+        with urllib.request.urlopen(req, timeout=10) as r:
+            d = json.loads(r.read().decode('utf-8', 'replace'))
+    except Exception as e:
+        return {'configured': True, 'ok': False, 'error': str(e)}
+    s = (d.get('scamalytics') or {})
+    if s.get('status') != 'ok':
+        return {'configured': True, 'ok': False, 'error': s.get('status') or 'unknown'}
+    return {
+        'configured': True,
+        'ok': True,
+        'score': s.get('scamalytics_score'),
+        'risk': s.get('scamalytics_risk'),
+        'url': s.get('scamalytics_url'),
+        'isp': s.get('scamalytics_isp'),
+        'org': s.get('scamalytics_org'),
+        'proxy': s.get('scamalytics_proxy') or {},
+        'blacklisted': s.get('is_blacklisted_external'),
+        'credits': s.get('credits') or {},
+    }
+
+def ip2location_query(ip):
+    """IP2Location.io 地理+代理+欺诈评分（免费 API，需 key，走环境变量）"""
+    key = IP2LOCATION_KEY
+    if not key:
+        return {'configured': False}
+    url = 'https://api.ip2location.io/?key=%s&ip=%s' % (key, ip)
+    req = urllib.request.Request(url, headers={'User-Agent': IPQ_UA})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            d = json.loads(r.read().decode('utf-8', 'replace'))
+    except Exception as e:
+        return {'configured': True, 'ok': False, 'error': str(e)}
+    if d.get('error'):
+        return {'configured': True, 'ok': False, 'error': d.get('error')}
+    ai = d.get('as_info') or {}
+    return {
+        'configured': True,
+        'ok': True,
+        'asn': ai.get('as_number') or d.get('asn'),
+        'as': d.get('as'),
+        'as_usage_type': ai.get('as_usage_type') or d.get('usage_type'),
+        'is_proxy': bool(d.get('is_proxy')),
+        'fraud_score': d.get('fraud_score'),
+        'proxy_type': (d.get('proxy') or {}).get('proxy_type'),
+        'country': d.get('country_name'),
+        'region': d.get('region_name'),
+        'city': d.get('city_name'),
+    }
 
 def derive_judgment(geo, dnsbl):
     if geo.get('proxy'):
@@ -824,10 +1115,25 @@ def detect_ip(ip):
     geo = geoip_query(ip)
     dnsbl = dnsbl_query(ip)
     ip_type, reputation = derive_judgment(geo, dnsbl)
+    scam = scamalytics_query(ip)
+    # 仅当真正发起了调用（已配置 key）才计入本系统额度
+    if scam.get('configured'):
+        try:
+            bump_scamalytics_usage()
+        except Exception:
+            pass
+    ip2 = ip2location_query(ip)
+    if ip2.get('configured'):
+        try:
+            bump_ip2location_usage()
+        except Exception:
+            pass
     return {
         'ip': ip,
         'geo': geo,
         'dnsbl': dnsbl,
+        'scamalytics': scam,
+        'ip2location': ip2,
         'ip_type': ip_type,
         'reputation': reputation,
         'blacklist_hits': dnsbl.get('hits', 0),
@@ -849,8 +1155,13 @@ def get_ip_quality(ip, force=False):
             d = dict(entry['data'])
             d['cached'] = True
             d['count'] = entry['count']
+            d['scamalytics_used'] = scamalytics_month_used()
+            d['ip2location_used'] = ip2location_month_used()
             return {'ok': True, **d}
-        data = detect_ip(ip)
+        try:
+            data = detect_ip(ip)
+        except Exception as e:
+            return {'ok': False, 'error': f'检测异常: {str(e)}'}
         if entry:
             entry['data'] = data
             entry['cached_at'] = now
@@ -864,6 +1175,8 @@ def get_ip_quality(ip, force=False):
         d = dict(data)
         d['cached'] = False
         d['count'] = cache[ip]['count']
+        d['scamalytics_used'] = scamalytics_month_used()
+        d['ip2location_used'] = ip2location_month_used()
         return {'ok': True, **d}
 
 
@@ -987,15 +1300,10 @@ class Handler(BaseHTTPRequestHandler):
         if p == '/admin/api/ip-quality':
             if not check_session(self):
                 self._send(401, {'error': 'unauth'}); return
-            try:
-                length = int(self.headers.get('Content-Length', 0))
-                body = json.loads(self.rfile.read(length) or b'{}')
-            except Exception:
-                body = {}
-            ip = (body.get('ip') or '').strip()
-            force = bool(body.get('force', False))
+            ip = (d.get('ip') or '').strip()
+            force = bool(d.get('force', False))
             if not ip:
-                sid = (body.get('id') or '').strip()
+                sid = (d.get('id') or '').strip()
                 if sid:
                     try:
                         cfg = convert.load_config()
@@ -1004,8 +1312,11 @@ class Handler(BaseHTTPRequestHandler):
                             ip = (src.get('ip') or '').strip()
                     except Exception:
                         pass
-            res = get_ip_quality(ip, force)
-            self._send(200, res)
+            try:
+                res = get_ip_quality(ip, force)
+                self._send(200, res)
+            except Exception as ex:
+                self._send(500, {'ok': False, 'error': f'检测异常: {str(ex)}'})
             return
         if p == '/admin/api/update-all':
             self._send(200, convert.update_all()); return
