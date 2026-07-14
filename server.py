@@ -5,7 +5,7 @@ ZSUB 订阅管理面板 v2 —— 源池 + 多组合
 监听 127.0.0.1:8088, Nginx 反代 /admin/
 依赖: 同目录上级的 convert.py (from convert import ...)
 """
-import sys, os, json, hashlib, time, urllib.parse, subprocess, socket
+import sys, os, json, hashlib, time, urllib.parse, subprocess, socket, threading, urllib.request
 sys.path.insert(0, '/opt/sub-converter')
 import convert
 
@@ -182,6 +182,25 @@ tr:last-child td{border-bottom:none}
 tr[draggable]{transition:background .15s}
 tr.dragging{opacity:.45;background:#eef3fc}
 tr.drag-over{border-top:2px solid var(--blue)}
+.ipq-loading{color:var(--mut);padding:14px 0}
+.ipq-hero{display:flex;gap:12px;margin:6px 0 10px}
+.ipq-badge{flex:1;border-radius:10px;padding:12px 14px;background:#f4f6f8;border:1px solid var(--line);text-align:center}
+.ipq-badge .lbl{display:block;font-size:12px;color:var(--mut);margin-bottom:4px}
+.ipq-badge b{font-size:18px}
+.ipq-badge.ok{background:#e8f6ee;border-color:#bfe3cd}
+.ipq-badge.warn{background:#fff6e6;border-color:#f3dca6}
+.ipq-badge.bad{background:#fdecea;border-color:#f3c6c2}
+.tag-dc b{color:#2b6cb0}.tag-res b{color:#2f855a}.tag-mob b{color:#805ad5}.tag-proxy b{color:#c05621}
+.ipq-meta{font-size:12px;color:var(--txt);margin-bottom:10px}
+.ipq-meta .mut{color:var(--mut)}
+.ipq-detail-toggle{margin-bottom:8px}
+.ipq-detail{background:#fafbfc;border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:10px}
+table.kv{width:100%;border-collapse:collapse;font-size:13px}
+table.kv td{padding:5px 8px;border-bottom:1px solid var(--line)}
+table.kv td:first-child{color:var(--mut);width:90px;white-space:nowrap}
+.ipq-bl-title{font-size:13px;font-weight:600;margin:10px 0 4px}
+ul.ipq-bl{margin:0;padding-left:18px;font-size:13px}
+ul.ipq-bl li{margin:2px 0}
 </style>
 </head>
 <body>
@@ -378,7 +397,56 @@ $('#btnLog').onclick=async()=>{const log=await api('log');openLog(log.log||'\\u6
 // 源操作
 async function srcFetch(id){const sum=await api('source/fetch',{id});showFeedback(sum,'更新源 '+id);await refresh();}
 async function srcToggle(id){const s=STATE.sources.find(x=>x.id===id);await api('source/toggle',{id,enabled:!s.enabled});await refresh();toast(s.enabled?'\u5df2\u505c\u7528':'\u5df2\u542f\u7528');}
-function srcIpQ(id){openModal('<h3>IP 质量检测</h3><div class="warn">该功能正在开发中，暂未开放。后续将支持按 IP 查询地理/类型、隐私标记、黑名单、延迟等多手段检测并留痕。</div><div class="acts"><button class="btn primary" onclick="closeModal()">知道了</button></div>');}
+async function srcIpQ(id){
+  const s=STATE.sources.find(x=>x.id===id);
+  if(!s){return;}
+  const ip=(s.ip||'').trim();
+  if(!ip){openModal('<h3>IP 质量</h3><div class="warn">该源没有 IP，请先在「编辑」里补充 IP 后再检测。</div><div class="acts"><button class="btn primary" onclick="closeModal()">知道了</button></div>');return;}
+  openModal('<h3>IP 质量 · '+esc(s.name)+'</h3><div id="ipqBody" class="ipq-loading">检测中…</div>');
+  try{
+    const r=await api('ip-quality',{ip,force:false});
+    renderIpq(r, ip);
+  }catch(e){ const b=document.getElementById('ipqBody'); if(b)b.innerHTML='<div class="warn">检测失败：'+esc(e.message)+'</div>'; }
+}
+function renderIpq(r, ip){
+  const b=document.getElementById('ipqBody'); if(!b)return;
+  if(!r.ok){ b.innerHTML='<div class="warn">'+esc(r.error||'检测失败')+'</div>'; return; }
+  const type=r.ip_type||'—', rep=r.reputation||'—';
+  const repClass = rep==='干净'?'ok':(rep==='可疑'?'warn':(rep==='滥用'?'bad':''));
+  const typeClass = type.indexOf('机房')>=0?'tag-dc':(type.indexOf('住宅')>=0?'tag-res':(type.indexOf('移动')>=0?'tag-mob':'tag-proxy'));
+  const total=(r.dnsbl&&r.dnsbl.total)||0;
+  let html='';
+  html+='<div class="ipq-hero">';
+  html+='<div class="ipq-badge '+typeClass+'"><span class="lbl">IP 类型</span><b>'+esc(type)+'</b></div>';
+  html+='<div class="ipq-badge '+repClass+'"><span class="lbl">声誉评级</span><b>'+esc(rep)+'</b></div>';
+  html+='</div>';
+  html+='<div class="ipq-meta">IP <b>'+esc(ip)+'</b> · 黑名单命中 <b>'+(r.blacklist_hits||0)+'/'+total+'</b>'+(r.cached?' · <span class="mut">缓存('+(r.count||0)+'次)</span>':' · <span class="mut">刚检测</span>')+'</div>';
+  html+='<div class="ipq-detail-toggle"><button class="btn sm" onclick="toggleIpqDetail()">详细 ▾</button></div>';
+  html+='<div id="ipqDetail" class="ipq-detail" style="display:none">';
+  const g=r.geo||{};
+  if(g.status==='success'||g.country){
+    const rows=[['国家',g.country+(g.countryCode?' ('+g.countryCode+')':'')],['地区',(g.regionName||'')+(g.city?' / '+g.city:'')],['ISP',g.isp],['组织',g.org],['ASN',(g.as||'')+(g.asname?' '+g.asname:'')],['时区',g.timezone],['经纬度',(g.lat!=null&&g.lon!=null)?(g.lat+', '+g.lon):''],['反向DNS',g.reverse],['标记',[g.proxy?'proxy':'',g.hosting?'hosting':'',g.mobile?'mobile':''].filter(Boolean).join(' ')||'—']];
+    html+='<table class="kv">';
+    for(const kv of rows){ html+='<tr><td>'+esc(kv[0])+'</td><td>'+esc(kv[1]||'—')+'</td></tr>'; }
+    html+='</table>';
+  }else{
+    html+='<div class="warn">GeoIP 查询失败：'+esc(g.message||'未知')+'</div>';
+  }
+  if(r.dnsbl&&r.dnsbl.lists&&r.dnsbl.lists.length){
+    html+='<div class="ipq-bl-title">黑名单命中清单</div><ul class="ipq-bl">';
+    for(const it of r.dnsbl.lists){ html+='<li>'+esc(it.name)+' <span class="mut">'+esc(it.code||'')+'</span></li>'; }
+    html+='</ul>';
+  }
+  html+='</div>';
+  html+='<div class="acts"><button class="btn primary" onclick="refreshIpq(\''+esc(ip)+'\')">刷新数据</button><button class="btn" onclick="closeModal()">关闭</button></div>';
+  b.innerHTML=html;
+}
+function toggleIpqDetail(){ const d=document.getElementById('ipqDetail'); if(d)d.style.display = d.style.display==='none'?'block':'none'; }
+async function refreshIpq(ip){
+  const b=document.getElementById('ipqBody'); if(b)b.innerHTML='检测中…';
+  try{ const r=await api('ip-quality',{ip,force:true}); renderIpq(r, ip); }
+  catch(e){ if(b)b.innerHTML='<div class="warn">刷新失败：'+esc(e.message)+'</div>'; }
+}
 
 function srcEdit(id){
   const s=STATE.sources.find(x=>x.id===id);
@@ -665,6 +733,140 @@ async function doLogin(){
 </html>'''
 
 
+# ──── IP 质量检测（GeoIP + DNSBL，带加权 LRU 缓存）────
+# 设计：缓存上限 100 个 IP；权重 = 查询次数，查询越多保留越久；
+# 满 100 时淘汰「权重最低，权重相同则最久未查询」的 IP；
+# 缓存命中直接返回（不联网），仅缓存缺失自动请求，后续靠用户手动刷新。
+IPQ_CACHE_FILE = '/opt/sub-converter/ip_quality_cache.json'
+IPQ_MAX = 100
+IPQ_LOCK = threading.Lock()
+IPQ_UA = 'ZSUB-Admin/1.0'
+
+# DNSBL 清单（纯 DNS 查询，免 key）。命中返回 127.0.0.x，未命中抛 NXDOMAIN
+DNSBL_ZONES = [
+    ('Spamhaus Zen', 'zen.spamhaus.org'),
+    ('SpamCop', 'bl.spamcop.net'),
+    ('SORBS', 'dnsbl.sorbs.net'),
+    ('CBL', 'cbl.abuseat.org'),
+    ('DroneBL', 'dnsbl.dronebl.org'),
+    ('PSBL', 'psbl.surriel.com'),
+    ('UCEPROTECT', 'dnsbl.uceprotect.net'),
+    ('Barracuda', 'b.barracudacentral.org'),
+    ('Tor Exit', 'tor.dan.me.uk'),
+]
+
+def ipq_load():
+    try:
+        with open(IPQ_CACHE_FILE, encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def ipq_save(cache):
+    try:
+        tmp = IPQ_CACHE_FILE + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump(cache, f, ensure_ascii=False)
+        os.replace(tmp, IPQ_CACHE_FILE)
+    except Exception:
+        pass
+
+def ipq_evict(cache):
+    # 淘汰权重(查询次数)最低者；权重相同则 last_queried 最小(最久未用)者
+    victim = min(cache.items(), key=lambda kv: (kv[1].get('count', 0), kv[1].get('last_queried', 0)))
+    cache.pop(victim[0], None)
+
+def geoip_query(ip):
+    try:
+        fields = ('status,message,country,countryCode,regionName,city,district,zip,'
+                  'lat,lon,timezone,offset,currency,isp,org,as,asname,mobile,proxy,hosting,reverse,query')
+        url = 'http://ip-api.com/json/%s?lang=zh-CN&fields=%s' % (ip, fields)
+        req = urllib.request.Request(url, headers={'User-Agent': IPQ_UA})
+        with urllib.request.urlopen(req, timeout=8) as r:
+            return json.loads(r.read().decode('utf-8', 'replace'))
+    except Exception as e:
+        return {'status': 'fail', 'message': str(e)}
+
+def dnsbl_query(ip):
+    if ':' in ip:  # IPv6 多数清单仅支持 v4，跳过
+        return {'hits': 0, 'total': len(DNSBL_ZONES), 'lists': [], 'skipped': True}
+    rev = '.'.join(reversed(ip.split('.')))
+    results = []
+    hits = 0
+    prev_to = socket.getdefaulttimeout()
+    socket.setdefaulttimeout(4)
+    try:
+        for name, zone in DNSBL_ZONES:
+            try:
+                ans = socket.gethostbyname('%s.%s' % (rev, zone))
+                hits += 1
+                results.append({'name': name, 'code': ans})
+            except Exception:
+                results.append({'name': name, 'code': None})
+    finally:
+        socket.setdefaulttimeout(prev_to)
+    return {'hits': hits, 'total': len(DNSBL_ZONES), 'lists': [x for x in results if x.get('code')]}
+
+def derive_judgment(geo, dnsbl):
+    if geo.get('proxy'):
+        ip_type = '代理/VPN'
+    elif geo.get('mobile'):
+        ip_type = '移动网络'
+    elif geo.get('hosting'):
+        ip_type = '机房(IP)'
+    else:
+        ip_type = '住宅(IP)'
+    hits = dnsbl.get('hits', 0)
+    reputation = '干净' if hits == 0 else ('可疑' if hits <= 2 else '滥用')
+    return ip_type, reputation
+
+def detect_ip(ip):
+    geo = geoip_query(ip)
+    dnsbl = dnsbl_query(ip)
+    ip_type, reputation = derive_judgment(geo, dnsbl)
+    return {
+        'ip': ip,
+        'geo': geo,
+        'dnsbl': dnsbl,
+        'ip_type': ip_type,
+        'reputation': reputation,
+        'blacklist_hits': dnsbl.get('hits', 0),
+        'detected_at': time.time(),
+    }
+
+def get_ip_quality(ip, force=False):
+    ip = (ip or '').strip()
+    if not ip:
+        return {'ok': False, 'error': '缺少 IP'}
+    now = time.time()
+    with IPQ_LOCK:
+        cache = ipq_load()
+        entry = cache.get(ip)
+        if entry and not force:
+            entry['count'] = entry.get('count', 0) + 1
+            entry['last_queried'] = now
+            ipq_save(cache)
+            d = dict(entry['data'])
+            d['cached'] = True
+            d['count'] = entry['count']
+            return {'ok': True, **d}
+        data = detect_ip(ip)
+        if entry:
+            entry['data'] = data
+            entry['cached_at'] = now
+            entry['last_queried'] = now
+            entry['count'] = entry.get('count', 0) + 1
+        else:
+            if len(cache) >= IPQ_MAX:
+                ipq_evict(cache)
+            cache[ip] = {'count': 1, 'cached_at': now, 'last_queried': now, 'data': data}
+        ipq_save(cache)
+        d = dict(data)
+        d['cached'] = False
+        d['count'] = cache[ip]['count']
+        return {'ok': True, **d}
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
@@ -717,9 +919,6 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 log = ''
             self._send(200, {'log': log})
-            return
-        if p == '/admin/api/ip-quality':
-            self._send(200, {'status': 'not_ready', 'msg': 'IP 质量检测功能开发中'})
             return
         self._send(404, {'error': 'not found'})
 
@@ -785,6 +984,29 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(502, {'error': f'获取失败: {str(ex)}'})
             return
 
+        if p == '/admin/api/ip-quality':
+            if not check_session(self):
+                self._send(401, {'error': 'unauth'}); return
+            try:
+                length = int(self.headers.get('Content-Length', 0))
+                body = json.loads(self.rfile.read(length) or b'{}')
+            except Exception:
+                body = {}
+            ip = (body.get('ip') or '').strip()
+            force = bool(body.get('force', False))
+            if not ip:
+                sid = (body.get('id') or '').strip()
+                if sid:
+                    try:
+                        cfg = convert.load_config()
+                        src = next((s for s in cfg['sources'] if str(s['id']) == str(sid)), None)
+                        if src:
+                            ip = (src.get('ip') or '').strip()
+                    except Exception:
+                        pass
+            res = get_ip_quality(ip, force)
+            self._send(200, res)
+            return
         if p == '/admin/api/update-all':
             self._send(200, convert.update_all()); return
         if p == '/admin/api/source/fetch':

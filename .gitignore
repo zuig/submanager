@@ -23,3 +23,6 @@ tools/.env
 !sub_configs.json.example
 !deploy/sub_configs.json.example
 cache/
+
+# IP 质量检测缓存（含真实节点 IP 与声誉数据，切勿入库）
+ip_quality_cache.json
