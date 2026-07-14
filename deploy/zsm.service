@@ -1,5 +1,5 @@
 [Unit]
-Description=ZUIG Sub Manager
+Description=ZSUB Sub Manager
 After=network.target
 
 [Service]

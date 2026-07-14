@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-ZUIG 订阅管理面板 v2 —— 源池 + 多组合
+ZSUB 订阅管理面板 v2 —— 源池 + 多组合
 监听 127.0.0.1:8088, Nginx 反代 /admin/
 依赖: 同目录上级的 convert.py (from convert import ...)
 """
@@ -75,7 +75,7 @@ HTML_PAGE = r'''<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ZUIG 订阅管理</title>
+<title>ZSUB 订阅管理</title>
 <style>
 :root{--bg:#f5f6f8;--card:#fff;--line:#e6e8eb;--blue:#2f6bff;--green:#1f9d55;--red:#e0483e;--amber:#e08a00;--mut:#8a9099;--txt:#1f2329}
 *{box-sizing:border-box}
@@ -186,7 +186,7 @@ tr.drag-over{border-top:2px solid var(--blue)}
 </head>
 <body>
 <div class="topbar">
-  <h1>ZUIG 订阅管理</h1>
+  <h1>ZSUB 订阅管理</h1>
   <span class="sp"></span>
   <button class="btn primary" id="btnUpdateAll">全部更新</button>
   <button class="btn" id="btnLog">查看日志</button>
@@ -647,7 +647,7 @@ function openLog(text){
 function showLogin(){
   document.body.innerHTML='<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:40px 20px;background:#f5f6f8">'+
     '<div class="card" style="width:360px;max-width:92vw;text-align:center;padding:32px 24px">'+
-    '<h1 style="margin:0 0 6px;font-size:22px;color:var(--txt)">ZUIG 订阅管理</h1>'+
+    '<h1 style="margin:0 0 6px;font-size:22px;color:var(--txt)">ZSUB 订阅管理</h1>'+
     '<p style="margin:0 0 20px;color:var(--mut);font-size:13px">请输入密码登录</p>'+
     '<div class="field"><label>密码</label><input id="pw" type="password" onkeydown="if(event.key===\'Enter\')doLogin()"></div>'+
     '<div class="field err" id="lerr"></div>'+
@@ -760,7 +760,7 @@ class Handler(BaseHTTPRequestHandler):
             if DOMAIN not in (parsed.hostname or ''):
                 self._send(403, {'error': '不允许的域名'}); return
             try:
-                req = urllib.request.Request(url, headers={'User-Agent': 'ZUIG-Admin/1.0'})
+                req = urllib.request.Request(url, headers={'User-Agent': 'ZSUB-Admin/1.0'})
                 with urllib.request.urlopen(req, timeout=15) as resp:
                     content = resp.read().decode('utf-8', errors='replace')
                 # 判断格式：base64 端点的订阅内容是 base64 密文，需解码为明文节点 URI

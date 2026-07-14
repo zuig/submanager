@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==========================================
-# ZUIG 订阅生成脚本 v3 —— 源池 + 多组合架构
+# ZSUB 订阅生成脚本 v3 —— 源池 + 多组合架构
 # 读 sub_configs.json:
 #   1) 调 convert.py 抓取全部源 + 生成各组合 (slug_sub.txt / slug_clash.yaml / slug_singbox.json)
 #   2) 依据 combos 生成 Nginx 多组合端点配置
@@ -29,7 +29,7 @@ SCRIPT_DIR="/opt/sub-converter"
 CONF_FILE="$SCRIPT_DIR/sub_configs.json"
 OUTPUT_NGINX_TMP="$SCRIPT_DIR/.nginx_conf.tmp"
 LOG="$SCRIPT_DIR/merge.log"
-SUB_NAME="ZUIG VPS SUB"
+SUB_NAME="ZSUB VPS SUB"
 PYTHON="/usr/bin/python3"; [ -x "$PYTHON" ] || PYTHON="python3"
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] 开始生成订阅 (多组合)..." | tee -a "$LOG"
@@ -65,7 +65,7 @@ CERT_KEY = os.environ.get('NGINX_CERT_KEY',  '/etc/letsencrypt/live/example.com/
 
 CFG=json.load(open("/opt/sub-converter/sub_configs.json"))
 COMBOS=CFG.get("combos",[])
-SUB_NAME="ZUIG VPS SUB"
+SUB_NAME="ZSUB VPS SUB"
 L=[]
 L.append("server {")
 L.append("    listen 443 ssl http2;")

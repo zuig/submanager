@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ZUIG 订阅格式转换器 v2 —— 源池 + 多组合架构
+ZSUB 订阅格式转换器 v2 —— 源池 + 多组合架构
 ============================================
 存储: /opt/sub-converter/sub_configs.json   (sources 源池 + combos 组合，唯一真相)
 缓存: /opt/sub-converter/cache/<source_id>.txt  (每个源抓取后的原始节点 URI，逐行)
@@ -17,7 +17,7 @@ import base64, hashlib, json, os, re, subprocess, sys, time, urllib.parse
 CONFIG_FILE = '/opt/sub-converter/sub_configs.json'
 CACHE_DIR = '/opt/sub-converter/cache'
 OUT_DIR = '/opt/sub-converter'
-SUB_NAME = 'ZUIG VPS SUB'
+SUB_NAME = 'ZSUB VPS SUB'
 
 # 部署相关（可通过环境变量覆盖，install.sh 部署时会注入）
 DOMAIN = os.environ.get('SUB_DOMAIN', 'sub.example.com')
