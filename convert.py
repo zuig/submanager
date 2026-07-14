@@ -19,12 +19,11 @@ CACHE_DIR = '/opt/sub-converter/cache'
 OUT_DIR = '/opt/sub-converter'
 SUB_NAME = 'ZUIG VPS SUB'
 
-# 部署相关（可通过环境变量覆盖，避免把域名/证书路径硬编码进仓库）
-# install.sh 部署时会注入这些值；未设置时使用原 zuig 部署的默认值（仅占位，换新 VPS 请覆盖）
-DOMAIN = os.environ.get('SUB_DOMAIN', 'sub.zuig.net')
-NGINX_CERT_FULL = os.environ.get('NGINX_CERT_FULL', '/www/server/panel/vhost/cert/zuig.net/fullchain.pem')
-NGINX_CERT_KEY = os.environ.get('NGINX_CERT_KEY', '/www/server/panel/vhost/cert/zuig.net/privkey.pem')
-NGINX_CONF_PATH = os.environ.get('NGINX_CONF_PATH', '/www/server/panel/vhost/nginx/sub.zuig.net.conf')
+# 部署相关（可通过环境变量覆盖，install.sh 部署时会注入）
+DOMAIN = os.environ.get('SUB_DOMAIN', 'sub.example.com')
+NGINX_CERT_FULL = os.environ.get('NGINX_CERT_FULL', '/etc/letsencrypt/live/example.com/fullchain.pem')
+NGINX_CERT_KEY = os.environ.get('NGINX_CERT_KEY', '/etc/letsencrypt/live/example.com/privkey.pem')
+NGINX_CONF_PATH = os.environ.get('NGINX_CONF_PATH', '/etc/nginx/conf.d/sub.example.com.conf')
 
 
 # ──── 配置读写 ────

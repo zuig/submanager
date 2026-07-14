@@ -13,7 +13,7 @@ import convert
 # 注意：仓库默认值为占位符，部署时务必改为强密码（否则任何人可登录面板）
 PASSWORD = os.environ.get('ZSM_PASS', 'CHANGE_ME_ZSM_ADMIN_PASSWORD')
 # 订阅域名：用于面板展示各组合端点 URL，部署时通过 SUB_DOMAIN 环境变量覆盖
-DOMAIN = os.environ.get('SUB_DOMAIN', 'sub.zuig.net')
+DOMAIN = os.environ.get('SUB_DOMAIN', 'sub.example.com')
 SECRET = hashlib.sha256(PASSWORD.encode()).hexdigest()[:32]
 SESSIONS = {}  # token -> True (内存, 重启清空, 可接受)
 
@@ -420,7 +420,7 @@ let _autoFilling=0;
 async function autoFillFromUrl(){
   const url=$('#m_url')?.value?.trim();
   if(!url)return;
-  // 1. 提取名称：从 sui.{name}.zuig.net 或 sui.{name} 格式提取，转大写
+  // 1. 提取名称：从 sui.{name}.{domain} 或 sui.{name} 格式提取，转大写
   const m=url.match(/(?:\/|\/\/)sui[.\-]([a-zA-Z][a-zA-Z0-9\-]*)/);
   if(m){const n=m[1].toUpperCase();if(!$('#m_name').value)$('#m_name').value=n;}
   // 2. 自动解析IP和所在地（防抖）

@@ -76,7 +76,7 @@ SubManager/
 
 1. 把仓库传到目标 VPS（或 `git clone`）：
    ```bash
-   git clone git@github.com:zuig/submanager.git
+   git clone git@github.com:YOUR_USERNAME/submanager.git
    cd submanager
    ```
 

@@ -53,8 +53,8 @@ prompt() {  # prompt <变量名> <提示> <默认值>
   printf -v "$var" '%s' "$val"
 }
 
-# 域名（默认 sub.zuig.net，仅占位；请换成你自己的域名）
-prompt SUB_DOMAIN     "订阅域名 (ServerName)"        "sub.zuig.net"
+# 域名（默认值仅为占位，部署时请换成你自己的域名）
+prompt SUB_DOMAIN     "订阅域名 (ServerName)"        "sub.example.com"
 
 # 证书：自动探测常见路径
 DEF_CERT_FULL="/www/server/panel/vhost/cert/${SUB_DOMAIN#*.}/fullchain.pem"

@@ -7,10 +7,10 @@
 #   3) cp 到 vhost + nginx -t + reload
 #
 # 可经环境变量覆盖（install.sh 会自动注入，换新 VPS 时改这里或交互填入）：
-#   SUB_DOMAIN        默认 sub.zuig.net
-#   NGINX_CERT_FULL   默认 /www/server/panel/vhost/cert/zuig.net/fullchain.pem  (宝塔)
-#   NGINX_CERT_KEY    默认 /www/server/panel/vhost/cert/zuig.net/privkey.pem    (宝塔)
-#   NGINX_CONF_PATH   默认 /www/server/panel/vhost/nginx/sub.zuig.net.conf      (宝塔)
+#   SUB_DOMAIN        默认 sub.example.com
+#   NGINX_CERT_FULL   默认 /etc/letsencrypt/live/example.com/fullchain.pem
+#   NGINX_CERT_KEY    默认 /etc/letsencrypt/live/example.com/privkey.pem
+#   NGINX_CONF_PATH   默认 /etc/nginx/conf.d/sub.example.com.conf
 # ==========================================
 set -uo pipefail
 
@@ -19,11 +19,11 @@ if [ -f /opt/sub-converter/.env ]; then
   set -a; . /opt/sub-converter/.env; set +a
 fi
 
-# ---- 从环境读取（带向后兼容默认值，适配原 TP 部署）----
-SUB_DOMAIN="${SUB_DOMAIN:-sub.zuig.net}"
-NGINX_CERT_FULL="${NGINX_CERT_FULL:-/www/server/panel/vhost/cert/zuig.net/fullchain.pem}"
-NGINX_CERT_KEY="${NGINX_CERT_KEY:-/www/server/panel/vhost/cert/zuig.net/privkey.pem}"
-NGINX_CONF_PATH="${NGINX_CONF_PATH:-/www/server/panel/vhost/nginx/sub.zuig.net.conf}"
+# ---- 从环境读取（带通用默认值，install.sh 部署时覆盖）----
+SUB_DOMAIN="${SUB_DOMAIN:-sub.example.com}"
+NGINX_CERT_FULL="${NGINX_CERT_FULL:-/etc/letsencrypt/live/example.com/fullchain.pem}"
+NGINX_CERT_KEY="${NGINX_CERT_KEY:-/etc/letsencrypt/live/example.com/privkey.pem}"
+NGINX_CONF_PATH="${NGINX_CONF_PATH:-/etc/nginx/conf.d/sub.example.com.conf}"
 
 SCRIPT_DIR="/opt/sub-converter"
 CONF_FILE="$SCRIPT_DIR/sub_configs.json"
@@ -59,9 +59,9 @@ fi
 export SUB_DOMAIN NGINX_CERT_FULL NGINX_CERT_KEY
 $PYTHON - <<'PYEOF' > "$OUTPUT_NGINX_TMP"
 import os, json
-DOMAIN   = os.environ.get('SUB_DOMAIN', 'sub.zuig.net')
-CERT_FULL= os.environ.get('NGINX_CERT_FULL', '/www/server/panel/vhost/cert/zuig.net/fullchain.pem')
-CERT_KEY = os.environ.get('NGINX_CERT_KEY',  '/www/server/panel/vhost/cert/zuig.net/privkey.pem')
+DOMAIN   = os.environ.get('SUB_DOMAIN', 'sub.example.com')
+CERT_FULL= os.environ.get('NGINX_CERT_FULL', '/etc/letsencrypt/live/example.com/fullchain.pem')
+CERT_KEY = os.environ.get('NGINX_CERT_KEY',  '/etc/letsencrypt/live/example.com/privkey.pem')
 
 CFG=json.load(open("/opt/sub-converter/sub_configs.json"))
 COMBOS=CFG.get("combos",[])
